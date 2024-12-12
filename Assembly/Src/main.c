@@ -17,11 +17,96 @@
  */
 
 #include "stm32f407xx.h"
+//#define SYSTICK
+//#define ACESS_LEVEL_CHANGE
+#define STACK_CHANGE
 
+#if defined (ACESS_LEVEL_CHANGE)
+
+void SVC_Handler(void) {
+    __asm volatile (
+        "MOV R0, #0\n"        // Load 0 into r0 (privileged access level)
+        "MSR CONTROL, R0\n"   // Move the value in r0 to the CONTROL register
+        "ISB"                 // Instruction Synchronization Barrier
+    );
+}
+
+void set_unprivileged_mode(void) {
+    __asm volatile (
+        "MOV R0, #1\n"        // Load 1 into r0 (unprivileged access level)
+        "MSR CONTROL, R0\n"   // Move the value in r0 to the CONTROL register
+        "ISB"                 // Instruction Synchronization Barrier
+    );
+}
+
+void set_privileged_mode(void) {
+    __asm volatile (
+        "SVC 0"  // Trigger the SVC exception to switch back to privileged mode
+    );
+}
+
+int main(void) {
+    set_unprivileged_mode();  // Switch to unprivileged mode
+
+    // Code running in unprivileged mode
+
+    set_privileged_mode();    // Return to privileged mode using SVC call
+
+    while (1) {
+        // Main loop
+    }
+}
+
+#elif defined (STACK_CHANGE)
+
+void set_psp(uint32_t stack_addr) {
+    __asm volatile (
+        "MSR PSP, %0\n"       // Set PSP to the given address
+        "ISB"                 // Instruction Synchronization Barrier
+        :                      // No output
+        : "r" (stack_addr)    // Input: stack address
+    );
+}
+
+void switch_to_psp(void) {
+    __asm volatile (
+        "MOV R0, #2\n"        // Load 2 into R0 (sets bit 1 to select PSP)
+        "MSR CONTROL, R0\n"   // Move the value in R0 to the CONTROL register
+        "ISB"                 // Instruction Synchronization Barrier
+    );
+}
+
+void switch_to_msp(void) {
+    __asm volatile (
+        "MOV R0, #0\n"        // Load 0 into R0 (clears bit 1 to select MSP)
+        "MSR CONTROL, R0\n"   // Move the value in R0 to the CONTROL register
+        "ISB"                 // Instruction Synchronization Barrier
+    );
+}
+
+int main(void) {
+    uint32_t process_stack[128];  // Define a stack area for PSP
+
+    // Set the Process Stack Pointer to the top of the process stack
+    set_psp((uint32_t)&process_stack[127]);  // PSP points to the top of the stack (full descending stack)
+
+    switch_to_psp();  // Switch to PSP
+
+    // Code running with PSP
+
+    switch_to_msp();  // Switch back to MSP
+
+    while (1) {
+        // Main loop
+    }
+}
+
+
+
+#else SYSTICK
 
 // Function prototype for SysTick handler
 void SysTick_Handler(void);
-
 
 int main(void) {
 	// Enable the clock for GPIO Port D
@@ -62,4 +147,4 @@ void SysTick_Handler(void) {
 			"STR R1, [R0]\n"// Store the new value back to ODR
 	);
 }
-
+#endif
